@@ -4,6 +4,7 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 
 const authRoutes = require('./routes/authRoutes');
+const repairRoutes = require('./routes/repairRoutes');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -31,6 +32,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth/register', registrationLimiter);
 app.use('/api/auth', authRoutes);
+app.use('/api/repairs', repairRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

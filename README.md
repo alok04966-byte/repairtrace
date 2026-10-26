@@ -51,6 +51,8 @@ Names are trimmed, emails are lowercased, and phone numbers must be valid E.164 
 
 `GET /api/auth/me` requires the `auth_token` cookie and returns only the authenticated user's safe profile fields. Missing, invalid, expired, or stale-user tokens return a safe `401` response.
 
+`POST /api/repairs` is staff-only and creates a device and repair order for an existing customer. `GET /api/repairs` returns all repair orders to staff and only the authenticated customer's own repairs to customers. `GET /api/repairs/:id` applies the same ownership restriction. The server assigns an atomic, increasing numeric repair number and returns a display reference such as `RT-000001`.
+
 ## Staff provisioning
 
 Public registration can create customers only. To create a staff account, set the optional `STAFF_*` values in the ignored `backend/.env` file, then run:
