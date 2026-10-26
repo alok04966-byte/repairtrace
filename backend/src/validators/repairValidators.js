@@ -75,4 +75,71 @@ function validateCreateRepair(body) {
   };
 }
 
-module.exports = { validateCreateRepair };
+function validateDiagnosis(body) {
+  const source = isPlainObject(body) ? body : {};
+  const errors = {};
+  Object.keys(source).forEach((field) => {
+    if (!['diagnosis', 'diagnosisNotes'].includes(field)) errors[field] = 'This field is not allowed.';
+  });
+  const diagnosis = typeof source.diagnosis === 'string' ? source.diagnosis.trim() : '';
+  const diagnosisNotes = typeof source.diagnosisNotes === 'string' ? source.diagnosisNotes.trim() : '';
+  if (!diagnosis || diagnosis.length > 2000) errors.diagnosis = 'Diagnosis is required and must be at most 2000 characters.';
+  if (source.diagnosisNotes !== undefined && (typeof source.diagnosisNotes !== 'string' || diagnosisNotes.length > 2000)) {
+    errors.diagnosisNotes = 'Diagnosis notes must be text of at most 2000 characters.';
+  }
+  return { errors, value: { diagnosis, diagnosisNotes } };
+}
+
+function validateQuote(body) {
+  const source = isPlainObject(body) ? body : {};
+  const errors = {};
+  Object.keys(source).forEach((field) => { if (field !== 'items') errors[field] = 'This field is not allowed.'; });
+  const items = source.items;
+  if (!Array.isArray(items) || items.length < 1 || items.length > 50) {
+    errors.items = 'Items must contain between 1 and 50 entries.';
+    return { errors, value: { items: [] } };
+  }
+  const value = items.map((item, index) => {
+    if (!isPlainObject(item) || Object.keys(item).some((field) => !['description', 'quantity', 'unitPrice'].includes(field))) {
+      errors[`items.${index}`] = 'Each item must contain only description, quantity, and unitPrice.';
+      return null;
+    }
+    const description = typeof item.description === 'string' ? item.description.trim() : '';
+    const quantity = item.quantity;
+    const price = item.unitPrice;
+    if (!description || description.length > 300) errors[`items.${index}.description`] = 'Description is required and must be at most 300 characters.';
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000) errors[`items.${index}.quantity`] = 'Quantity must be a whole number between 1 and 1000.';
+    // A string form prevents floating-point rounding. Numeric input is accepted only when it has at most two decimals.
+    const priceText = typeof price === 'string' ? price.trim() : (typeof price === 'number' && Number.isFinite(price) ? String(price) : '');
+    if (!/^\d+(?:\.\d{1,2})?$/.test(priceText)) errors[`items.${index}.unitPrice`] = 'Unit price must be a nonnegative INR amount with at most two decimals.';
+    const [whole, fraction = ''] = priceText.split('.');
+    const unitPricePaise = Number(whole) * 100 + Number((fraction + '00').slice(0, 2));
+    if (!Number.isSafeInteger(unitPricePaise) || unitPricePaise > 100000000) errors[`items.${index}.unitPrice`] = 'Unit price is too large.';
+    return { description, quantity, unitPricePaise, lineTotalPaise: quantity * unitPricePaise };
+  });
+  return { errors, value: { items: value.filter(Boolean) } };
+}
+
+function validateDecision(body) {
+  const source = isPlainObject(body) ? body : {};
+  const errors = {};
+  Object.keys(source).forEach((field) => { if (field !== 'decision') errors[field] = 'This field is not allowed.'; });
+  const decision = typeof source.decision === 'string' ? source.decision.trim().toLowerCase() : '';
+  if (!['approved', 'declined'].includes(decision)) errors.decision = 'Decision must be approved or declined.';
+  return { errors, value: { decision } };
+}
+
+function validateStatusChange(body) {
+  const source = isPlainObject(body) ? body : {};
+  const errors = {};
+  Object.keys(source).forEach((field) => { if (!['status', 'reason', 'resolutionNote'].includes(field)) errors[field] = 'This field is not allowed.'; });
+  const status = typeof source.status === 'string' ? source.status.trim() : '';
+  const reason = typeof source.reason === 'string' ? source.reason.trim() : '';
+  const resolutionNote = typeof source.resolutionNote === 'string' ? source.resolutionNote.trim() : '';
+  if (!['awaiting_parts', 'in_progress'].includes(status)) errors.status = 'Status must be awaiting_parts or in_progress.';
+  if (status === 'awaiting_parts' && (!reason || reason.length > 500)) errors.reason = 'A non-empty blocker reason of at most 500 characters is required.';
+  if (status === 'in_progress' && (!resolutionNote || resolutionNote.length > 500)) errors.resolutionNote = 'A non-empty resolution note of at most 500 characters is required.';
+  return { errors, value: { status, reason, resolutionNote } };
+}
+
+module.exports = { validateCreateRepair, validateDiagnosis, validateQuote, validateDecision, validateStatusChange };

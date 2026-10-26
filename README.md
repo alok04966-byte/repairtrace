@@ -1,6 +1,6 @@
 # RepairTrace
 
-The current milestone provides customer registration and login APIs only; no frontend, logout, profile, repair, quotation, or status features are included yet.
+The current backend milestone includes customer authentication, staff-controlled repair intake, diagnosis, versioned quotations, approval decisions, and the initial repair-progress lifecycle. There is no frontend yet.
 
 ## Prerequisites
 
@@ -53,6 +53,29 @@ Names are trimmed, emails are lowercased, and phone numbers must be valid E.164 
 `GET /api/auth/me` requires the `auth_token` cookie and returns only the authenticated user's safe profile fields. Missing, invalid, expired, or stale-user tokens return a safe `401` response.
 
 `POST /api/repairs` is staff-only and creates a device and repair order for an existing customer. `GET /api/repairs` returns all repair orders to staff and only the authenticated customer's own repairs to customers. `GET /api/repairs/:id` applies the same ownership restriction. The server assigns an atomic, increasing numeric repair number and returns a display reference such as `RT-000001`.
+
+### Diagnosis, quotations, and progress
+
+All routes below require the `auth_token` cookie. Staff-only routes reject customers; customer quote decisions reject staff.
+
+- `PATCH /api/repairs/:id/diagnosis` (staff) records a required diagnosis and optional internal `diagnosisNotes`. A diagnosis starts `diagnosing`. Changing it supersedes any existing quotation and requires a new approval.
+- `POST /api/repairs/:id/quotes` (staff) creates the next quotation version after diagnosis. Send `items`, each with `description`, positive integer `quantity`, and a nonnegative INR `unitPrice` with no more than two decimal places. Totals are calculated as integer paise on the server.
+- `GET /api/repairs/:id/quotes` returns quote history to staff or the repair's owning customer.
+- `POST /api/repairs/:id/quotes/:version/decision` (owning customer) accepts `{ "decision": "approved" }` or `{ "decision": "declined" }` only for the latest pending version. Approval starts work unless a parts blocker exists; decline returns the repair to `diagnosing`.
+- `PATCH /api/repairs/:id/status` (staff) supports only `{ "status": "awaiting_parts", "reason": "..." }` from approved `in_progress`, and `{ "status": "in_progress", "resolutionNote": "..." }` from `awaiting_parts`.
+
+Repair details include quotation and audit history. Customers receive only their own repair and customer-safe history; internal diagnosis notes remain staff-only.
+
+Example quote request body:
+
+```json
+{
+  "items": [
+    { "description": "Replacement screen", "quantity": 1, "unitPrice": "1250.50" },
+    { "description": "Labour", "quantity": 1, "unitPrice": 250 }
+  ]
+}
+```
 
 ## Staff provisioning
 
