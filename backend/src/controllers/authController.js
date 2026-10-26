@@ -1,11 +1,11 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+const { AUTH_COOKIE_NAME, getJwtSecret } = require('../config/auth');
 const User = require('../models/User');
 const { validateRegistration, validateLogin } = require('../validators/authValidators');
 
 const BCRYPT_ROUNDS = 12;
-const AUTH_COOKIE_NAME = 'auth_token';
 const AUTH_TOKEN_LIFETIME = '7d';
 const AUTH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
@@ -45,11 +45,6 @@ async function register(req, res, next) {
   }
 }
 
-function getJwtSecret() {
-  const secret = process.env.JWT_SECRET;
-  return typeof secret === 'string' && secret.trim() ? secret : null;
-}
-
 async function login(req, res, next) {
   const { errors, value } = validateLogin(req.body);
   if (Object.keys(errors).length > 0) {
@@ -86,4 +81,8 @@ async function login(req, res, next) {
   }
 }
 
-module.exports = { register, login };
+function getCurrentUser(req, res) {
+  return res.status(200).json({ user: serializeUser(req.user) });
+}
+
+module.exports = { register, login, getCurrentUser };

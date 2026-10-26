@@ -24,6 +24,10 @@ Set `MONGODB_URI` and a long, random `JWT_SECRET` in `backend/.env` before start
 | --- | --- | --- |
 | `MONGODB_URI` | Yes | MongoDB connection string for the application database. |
 | `JWT_SECRET` | Yes | Long random secret used to sign authentication tokens. |
+| `STAFF_NAME` | Only for provisioning | Name for the staff account created by the CLI. |
+| `STAFF_EMAIL` | Only for provisioning | Email for the staff account created by the CLI. |
+| `STAFF_PHONE` | Only for provisioning | E.164 phone number for the staff account created by the CLI. |
+| `STAFF_PASSWORD` | Only for provisioning | Strong password for the staff account created by the CLI. |
 | `PORT` | No | API listener port; defaults to `5000`. |
 
 ## API
@@ -44,6 +48,19 @@ Set `MONGODB_URI` and a long, random `JWT_SECRET` in `backend/.env` before start
 Names are trimmed, emails are lowercased, and phone numbers must be valid E.164 international numbers. The server hashes passwords with bcryptjs, rejects role input, and always assigns `customer`. Successful responses contain only safe user fields. A normalized duplicate email returns `409`.
 
 `POST /api/auth/login` accepts `email` and `password`. Email is trimmed and lowercased before lookup. Valid credentials set a seven-day `auth_token` HttpOnly cookie (`SameSite=Lax`; `Secure` in production) and return only safe user fields. Incorrect credentials always return the same `401` response. The JWT is not returned in the response body.
+
+`GET /api/auth/me` requires the `auth_token` cookie and returns only the authenticated user's safe profile fields. Missing, invalid, expired, or stale-user tokens return a safe `401` response.
+
+## Staff provisioning
+
+Public registration can create customers only. To create a staff account, set the optional `STAFF_*` values in the ignored `backend/.env` file, then run:
+
+```powershell
+cd backend
+npm run provision:staff
+```
+
+The script validates the values, hashes the password, creates only a new staff account, and refuses to change an existing account.
 
 ## Tests
 

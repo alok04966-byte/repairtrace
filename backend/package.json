@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "provision:staff": "node scripts/provisionStaff.js",
     "test": "cross-env NODE_ENV=test MONGOMS_DOWNLOAD_DIR=./.mongodb-binaries jest --runInBand"
   },
   "dependencies": {

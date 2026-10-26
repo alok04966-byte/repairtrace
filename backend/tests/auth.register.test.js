@@ -145,3 +145,54 @@ test('fails safely when JWT configuration is missing', async () => {
     process.env.JWT_SECRET = originalSecret;
   }
 });
+
+function getAuthCookie(response) {
+  return response.headers['set-cookie'].find((value) => value.startsWith('auth_token=')).split(';')[0];
+}
+
+async function loginCustomer() {
+  await request(app).post('/api/auth/register').send(validRegistration).expect(201);
+  const response = await request(app).post('/api/auth/login').send({
+    email: validRegistration.email,
+    password: validRegistration.password
+  }).expect(200);
+  return getAuthCookie(response);
+}
+
+test('rejects unauthenticated customer profile access', async () => {
+  const response = await request(app).get('/api/auth/me');
+  expect(response.status).toBe(401);
+  expect(response.body).toEqual({ error: 'Authentication required.' });
+});
+
+test('returns the authenticated customer profile without sensitive fields', async () => {
+  const cookie = await loginCustomer();
+  const response = await request(app).get('/api/auth/me').set('Cookie', cookie);
+
+  expect(response.status).toBe(200);
+  expect(response.body.user).toMatchObject({
+    name: 'Asha Sharma', email: 'asha@example.com', phone: '+919876543210', role: 'customer'
+  });
+  expect(response.body.user).not.toHaveProperty('password');
+  expect(response.body.user).not.toHaveProperty('passwordHash');
+  expect(response.body.user).not.toHaveProperty('token');
+});
+
+test('rejects invalid and expired authentication tokens', async () => {
+  const invalidResponse = await request(app).get('/api/auth/me').set('Cookie', 'auth_token=not-a-token');
+  const expiredToken = jwt.sign({ sub: new mongoose.Types.ObjectId().toString() }, process.env.JWT_SECRET, { expiresIn: '-1s' });
+  const expiredResponse = await request(app).get('/api/auth/me').set('Cookie', `auth_token=${expiredToken}`);
+
+  expect(invalidResponse.status).toBe(401);
+  expect(expiredResponse.status).toBe(401);
+  expect(invalidResponse.body).toEqual({ error: 'Invalid or expired authentication token.' });
+  expect(expiredResponse.body).toEqual(invalidResponse.body);
+});
+
+test('rejects a valid token whose user no longer exists', async () => {
+  const token = jwt.sign({ sub: new mongoose.Types.ObjectId().toString(), role: 'customer' }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  const response = await request(app).get('/api/auth/me').set('Cookie', `auth_token=${token}`);
+
+  expect(response.status).toBe(401);
+  expect(response.body).toEqual({ error: 'Invalid or expired authentication token.' });
+});
