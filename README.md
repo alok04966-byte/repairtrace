@@ -28,6 +28,7 @@ Set `MONGODB_URI` and a long, random `JWT_SECRET` in `backend/.env` before start
 | `STAFF_EMAIL` | Only for provisioning | Email for the staff account created by the CLI. |
 | `STAFF_PHONE` | Only for provisioning | E.164 phone number for the staff account created by the CLI. |
 | `STAFF_PASSWORD` | Only for provisioning | Strong password for the staff account created by the CLI. |
+| `STAFF_PROVISION_MODE` | Only for provisioning | `create` (default) creates a new staff account; explicit `promote` promotes the existing `STAFF_EMAIL` customer. |
 | `PORT` | No | API listener port; defaults to `5000`. |
 
 ## API
@@ -55,14 +56,14 @@ Names are trimmed, emails are lowercased, and phone numbers must be valid E.164 
 
 ## Staff provisioning
 
-Public registration can create customers only. To create a staff account, set the optional `STAFF_*` values in the ignored `backend/.env` file, then run:
+Public registration can create customers only. To create a staff account, set `STAFF_PROVISION_MODE=create` plus `STAFF_NAME`, `STAFF_EMAIL`, `STAFF_PHONE`, and `STAFF_PASSWORD` in the ignored `backend/.env` file, then run:
 
 ```powershell
 cd backend
 npm run provision:staff
 ```
 
-The script validates the values, hashes the password, creates only a new staff account, and refuses to change an existing account.
+The script validates the values, hashes the password, creates only a new staff account, and refuses to change an existing account. To explicitly promote an existing customer without changing their password, set `STAFF_PROVISION_MODE=promote` and `STAFF_EMAIL`, then run the same command. It never promotes an account unless that mode is set.
 
 ## Tests
 
