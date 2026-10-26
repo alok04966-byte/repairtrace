@@ -196,3 +196,10 @@ test('rejects a valid token whose user no longer exists', async () => {
   expect(response.status).toBe(401);
   expect(response.body).toEqual({ error: 'Invalid or expired authentication token.' });
 });
+
+test('clears the authentication cookie on logout', async () => {
+  const cookie = await loginCustomer();
+  const response = await request(app).post('/api/auth/logout').set('Cookie', cookie);
+  expect(response.status).toBe(204);
+  expect(response.headers['set-cookie'].find((value) => value.startsWith('auth_token='))).toMatch(/Expires=Thu, 01 Jan 1970/);
+});

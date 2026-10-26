@@ -1,6 +1,18 @@
 # RepairTrace
 
-The current backend milestone includes customer authentication, staff-controlled repair intake, diagnosis, versioned quotations, approval decisions, and the initial repair-progress lifecycle. There is no frontend yet.
+RepairTrace includes a React portal for customers and staff, backed by the secured Express API.
+
+## Frontend
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+The Vite development server proxies `/api` to `http://localhost:5000`. Start the backend separately with `cd backend; npm run dev`. For a deployed API, set `VITE_API_BASE_URL` to its origin (for example `https://api.example.com`), and configure that API's credentialed CORS policy for the frontend origin. The portal uses the backend's HttpOnly cookie and never stores tokens in browser storage.
+
+Customers can register, view only their own repairs, and decide current quotations. Staff accounts are provisioned through the existing CLI; staff can create repairs and run diagnosis, quotations, parts, quality checks, and handover workflows.
 
 ## Prerequisites
 

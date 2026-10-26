@@ -85,4 +85,9 @@ function getCurrentUser(req, res) {
   return res.status(200).json({ user: serializeUser(req.user) });
 }
 
-module.exports = { register, login, getCurrentUser };
+function logout(req, res) {
+  res.clearCookie(AUTH_COOKIE_NAME, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+  return res.status(204).end();
+}
+
+module.exports = { register, login, getCurrentUser, logout };
