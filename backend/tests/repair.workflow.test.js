@@ -55,6 +55,26 @@ test('staff records diagnosis, creates server-calculated versioned quotes, and c
   await request(app).patch(`/api/repairs/${id}/status`).set('Cookie', cookie(staff)).send({ status: 'in_progress', resolutionNote: 'No blocker.' }).expect(409);
 });
 
+test('owner can list, view, read quotes, and decide their repair while another customer receives 404', async () => {
+  const staff = await user('staff', 'staff@example.com');
+  const owner = await user('customer', 'owner@example.com');
+  const other = await user('customer', 'other@example.com');
+  const repair = await createRepair(staff, owner);
+  const id = repair.body.repair.id;
+  await request(app).patch(`/api/repairs/${id}/diagnosis`).set('Cookie', cookie(staff)).send({ diagnosis: 'Charging circuit fault.' }).expect(200);
+  await request(app).post(`/api/repairs/${id}/quotes`).set('Cookie', cookie(staff)).send(quote).expect(201);
+
+  const list = await request(app).get('/api/repairs').set('Cookie', cookie(owner)).expect(200);
+  expect(list.body.repairs.map((entry) => entry.id)).toEqual([id]);
+  await request(app).get(`/api/repairs/${id}`).set('Cookie', cookie(owner)).expect(200);
+  const quotes = await request(app).get(`/api/repairs/${id}/quotes`).set('Cookie', cookie(owner)).expect(200);
+  expect(quotes.body.quotes).toHaveLength(1);
+  await request(app).get(`/api/repairs/${id}`).set('Cookie', cookie(other)).expect(404);
+  await request(app).get(`/api/repairs/${id}/quotes`).set('Cookie', cookie(other)).expect(404);
+  await request(app).post(`/api/repairs/${id}/quotes/1/decision`).set('Cookie', cookie(other)).send({ decision: 'approved' }).expect(404);
+  await request(app).post(`/api/repairs/${id}/quotes/1/decision`).set('Cookie', cookie(owner)).send({ decision: 'approved' }).expect(200);
+});
+
 test('validates quote items and enforces parts blocker lifecycle with audit history', async () => {
   const staff = await user('staff', 'staff@example.com');
   const customer = await user('customer', 'customer@example.com');

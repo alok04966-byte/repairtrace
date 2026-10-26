@@ -20,6 +20,20 @@ function serializeQuote(quote) {
   return result;
 }
 
+function objectIdValue(value) {
+  return value && value._id ? value._id : value;
+}
+
+function sameObjectId(left, right) {
+  return String(objectIdValue(left)) === String(objectIdValue(right));
+}
+
+function repairOwnershipFilter(req, filter = {}) {
+  if (req.user.role === 'staff') return filter;
+  // req.user is loaded from MongoDB by requireAuth; this is the server-derived User._id.
+  return { ...filter, customer: objectIdValue(req.user._id) };
+}
+
 function serializeRepair(repair, includeStaffFields = true) {
   const device = repair.device;
   const result = {
@@ -110,7 +124,7 @@ async function createRepair(req, res, next) {
 
 async function listRepairs(req, res, next) {
   try {
-    const filter = req.user.role === 'staff' ? {} : { customer: req.user._id };
+    const filter = repairOwnershipFilter(req);
     const repairs = await RepairOrder.find(filter).sort({ repairNumber: 1 }).populate('device');
     return res.status(200).json({ repairs: repairs.map((repair) => serializeRepair(repair, req.user.role === 'staff')) });
   } catch (error) {
@@ -124,8 +138,7 @@ async function getRepair(req, res, next) {
   }
 
   try {
-    const filter = { _id: req.params.id };
-    if (req.user.role !== 'staff') filter.customer = req.user._id;
+    const filter = repairOwnershipFilter(req, { _id: req.params.id });
 
     const repair = await RepairOrder.findOne(filter).populate('device');
     if (!repair) return res.status(404).json({ error: 'Repair order not found.' });
@@ -213,8 +226,7 @@ async function createQuote(req, res, next) {
 async function listQuotes(req, res, next) {
   if (!validRepairId(req.params.id)) return res.status(400).json({ error: 'Repair ID must be valid.' });
   try {
-    const filter = { _id: req.params.id };
-    if (req.user.role !== 'staff') filter.customer = req.user._id;
+    const filter = repairOwnershipFilter(req, { _id: req.params.id });
     const repair = await RepairOrder.findOne(filter);
     if (!repair) return res.status(404).json({ error: 'Repair order not found.' });
     return res.status(200).json({ quotes: repair.quotes.map(serializeQuote) });
@@ -227,7 +239,7 @@ async function decideQuote(req, res, next) {
   if (Object.keys(errors).length) return res.status(400).json({ error: 'Validation failed.', details: errors });
   try {
     const result = await saveWithRetry(req.params.id, (repair) => {
-      if (repair.customer.toString() !== req.user._id.toString()) return { error: 'Repair order not found.', status: 404 };
+      if (!sameObjectId(repair.customer, req.user._id)) return { error: 'Repair order not found.', status: 404 };
       const version = Number(req.params.version);
       const quote = repair.quotes.find((entry) => entry.version === version);
       const latest = repair.quotes.reduce((highest, entry) => Math.max(highest, entry.version), 0);
