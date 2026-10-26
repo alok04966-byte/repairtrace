@@ -27,6 +27,24 @@ const historySchema = new mongoose.Schema({
   createdAt: { type: Date, required: true }
 }, { _id: false });
 
+const qualityCheckSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  label: { type: String, required: true },
+  result: { type: String, enum: ['pending', 'pass', 'fail'], default: 'pending' },
+  notes: { type: String, trim: true, maxlength: 500 },
+  checkedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  checkedAt: Date
+}, { _id: false });
+
+const qualityAttemptSchema = new mongoose.Schema({
+  attempt: { type: Number, required: true, min: 1 },
+  status: { type: String, enum: ['active', 'passed', 'failed'], required: true },
+  startedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  startedAt: { type: Date, required: true },
+  completedAt: Date,
+  checks: { type: [qualityCheckSchema], required: true }
+}, { _id: false });
+
 const repairOrderSchema = new mongoose.Schema(
   {
     repairNumber: { type: Number, required: true, unique: true, min: 1, index: true },
@@ -41,12 +59,19 @@ const repairOrderSchema = new mongoose.Schema(
     diagnosisNotes: { type: String, trim: true, maxlength: 2000, default: '' },
     quotes: { type: [quoteSchema], default: [] },
     history: { type: [historySchema], default: [] },
+    qualityAttempts: { type: [qualityAttemptSchema], default: [] },
+    handover: {
+      recipientName: { type: String, trim: true, maxlength: 200 },
+      notes: { type: String, trim: true, maxlength: 1000 },
+      handedOverBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      handedOverAt: Date
+    },
     partsBlocker: {
       reason: { type: String, trim: true, maxlength: 500 },
       addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       addedAt: Date
     },
-    status: { type: String, enum: ['received', 'diagnosing', 'awaiting_approval', 'awaiting_parts', 'in_progress'], default: 'received' }
+    status: { type: String, enum: ['received', 'diagnosing', 'awaiting_approval', 'awaiting_parts', 'in_progress', 'quality_check', 'ready_for_collection', 'returned'], default: 'received' }
   },
   { timestamps: true, optimisticConcurrency: true }
 );

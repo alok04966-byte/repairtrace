@@ -4,7 +4,13 @@ const Device = require('../models/Device');
 const RepairCounter = require('../models/RepairCounter');
 const RepairOrder = require('../models/RepairOrder');
 const User = require('../models/User');
-const { validateCreateRepair, validateDiagnosis, validateQuote, validateDecision, validateStatusChange } = require('../validators/repairValidators');
+const { validateCreateRepair, validateDiagnosis, validateQuote, validateDecision, validateStatusChange, validateQualityChecks, validateHandover } = require('../validators/repairValidators');
+
+const REQUIRED_QUALITY_CHECKS = [
+  { id: 'reported_issue_resolved', label: 'Reported issue resolved' },
+  { id: 'basic_functionality_tested', label: 'Basic functionality tested' },
+  { id: 'device_condition_verified', label: 'Device condition verified' }
+];
 
 function serializeQuote(quote) {
   const result = {
@@ -64,6 +70,8 @@ function serializeRepair(repair, includeStaffFields = true) {
   if (includeStaffFields) {
     result.diagnosis = repair.diagnosis;
     result.diagnosisNotes = repair.diagnosisNotes;
+    result.qualityAttempts = repair.qualityAttempts;
+    result.handover = repair.handover;
   }
   return result;
 }
@@ -156,6 +164,20 @@ function addHistory(repair, type, actor, options = {}) {
   repair.history.push({ type, actor: actor._id, quoteVersion: options.quoteVersion, reason: options.reason, customerSafe: options.customerSafe !== false, createdAt: new Date() });
 }
 
+function latestQuoteIsApproved(repair) {
+  if (!repair.quotes.length) return false;
+  const latest = repair.quotes.reduce((current, quote) => (quote.version > current.version ? quote : current));
+  return latest.status === 'approved';
+}
+
+function activeQualityAttempt(repair) {
+  return repair.qualityAttempts[repair.qualityAttempts.length - 1];
+}
+
+function qualityAttemptPassed(attempt) {
+  return attempt && attempt.status === 'passed' && attempt.checks.length === REQUIRED_QUALITY_CHECKS.length && attempt.checks.every((check) => check.result === 'pass');
+}
+
 async function loadRepairForStaff(id) {
   return RepairOrder.findById(id).populate('device');
 }
@@ -182,7 +204,7 @@ async function recordDiagnosis(req, res, next) {
   if (Object.keys(errors).length) return res.status(400).json({ error: 'Validation failed.', details: errors });
   try {
     const result = await saveWithRetry(req.params.id, (repair) => {
-      if (['awaiting_parts', 'in_progress'].includes(repair.status)) return { error: 'Diagnosis cannot be changed while repair work is active or blocked for parts.', status: 409 };
+      if (['awaiting_parts', 'in_progress', 'quality_check', 'ready_for_collection', 'returned'].includes(repair.status)) return { error: 'Diagnosis cannot be changed after repair work has begun.', status: 409 };
       const changing = repair.diagnosis && repair.diagnosis !== value.diagnosis;
       if (changing && repair.quotes.some((quote) => quote.status !== 'superseded')) {
         repair.quotes.forEach((quote) => { if (quote.status !== 'superseded') { quote.status = 'superseded'; addHistory(repair, 'quotation_superseded', req.user, { quoteVersion: quote.version }); } });
@@ -207,7 +229,7 @@ async function createQuote(req, res, next) {
   try {
     const result = await saveWithRetry(req.params.id, (repair) => {
       if (!repair.diagnosis) return { error: 'A diagnosis is required before creating a quotation.', status: 409 };
-      if (repair.status === 'awaiting_parts') return { error: 'Resolve the parts blocker before revising the quotation.', status: 409 };
+      if (['awaiting_parts', 'quality_check', 'ready_for_collection', 'returned'].includes(repair.status)) return { error: 'Quotation cannot be changed in the current repair state.', status: 409 };
       repair.quotes.forEach((quote) => { if (quote.status !== 'superseded') { quote.status = 'superseded'; addHistory(repair, 'quotation_superseded', req.user, { quoteVersion: quote.version }); } });
       const version = repair.quotes.reduce((highest, quote) => Math.max(highest, quote.version), 0) + 1;
       const totalPaise = value.items.reduce((total, item) => total + item.lineTotalPaise, 0);
@@ -263,14 +285,31 @@ async function changeRepairStatus(req, res, next) {
   if (Object.keys(errors).length) return res.status(400).json({ error: 'Validation failed.', details: errors });
   try {
     const result = await saveWithRetry(req.params.id, (repair) => {
-      const approved = repair.quotes.some((quote) => quote.status === 'approved' && quote.version === Math.max(...repair.quotes.map((entry) => entry.version)));
+      const approved = latestQuoteIsApproved(repair);
       if (value.status === 'awaiting_parts') {
         if (repair.status !== 'in_progress' || !approved) return { error: 'Only an approved repair in progress can be blocked for parts.', status: 409 };
         repair.partsBlocker = { reason: value.reason, addedBy: req.user._id, addedAt: new Date() };
         repair.status = 'awaiting_parts'; addHistory(repair, 'parts_blocker_added', req.user, { reason: value.reason });
+      } else if (value.status === 'in_progress') {
+        if (!approved) return { error: 'Only an approved repair can return to work.', status: 409 };
+        if (repair.status === 'awaiting_parts') {
+          repair.partsBlocker = undefined; repair.status = 'in_progress'; addHistory(repair, 'parts_blocker_cleared', req.user, { reason: value.resolutionNote });
+        } else if (repair.status === 'quality_check') {
+          const attempt = activeQualityAttempt(repair);
+          if (!attempt || !attempt.checks.some((check) => check.result === 'fail')) return { error: 'Quality rework requires a failed check.', status: 409 };
+          attempt.status = 'failed'; attempt.completedAt = new Date(); repair.status = 'in_progress';
+          addHistory(repair, 'quality_check_failed', req.user, { reason: `Attempt ${attempt.attempt}` }); addHistory(repair, 'quality_rework_started', req.user, { reason: value.resolutionNote });
+        } else return { error: 'Only a parts-blocked or failed-quality repair can return to work.', status: 409 };
+      } else if (value.status === 'quality_check') {
+        if (repair.status !== 'in_progress' || !approved || (repair.partsBlocker && repair.partsBlocker.reason)) return { error: 'Only an approved repair in progress without a parts blocker can enter quality check.', status: 409 };
+        const attempt = repair.qualityAttempts.length + 1;
+        repair.qualityAttempts.push({ attempt, status: 'active', startedBy: req.user._id, startedAt: new Date(), checks: REQUIRED_QUALITY_CHECKS.map((check) => ({ ...check, result: 'pending' })) });
+        repair.status = 'quality_check'; addHistory(repair, 'quality_check_started', req.user, { reason: `Attempt ${attempt}` });
       } else {
-        if (repair.status !== 'awaiting_parts' || !approved) return { error: 'Only an approved repair awaiting parts can return to work.', status: 409 };
-        repair.partsBlocker = undefined; repair.status = 'in_progress'; addHistory(repair, 'parts_blocker_cleared', req.user, { reason: value.resolutionNote });
+        const attempt = activeQualityAttempt(repair);
+        if (repair.status !== 'quality_check' || !approved || !attempt || attempt.checks.some((check) => check.result !== 'pass')) return { error: 'All required checks must pass before a repair is ready for collection.', status: 409 };
+        attempt.status = 'passed'; attempt.completedAt = new Date();
+        repair.status = 'ready_for_collection'; addHistory(repair, 'quality_check_passed', req.user, { reason: `Attempt ${attempt.attempt}` });
       }
       addHistory(repair, 'status_changed', req.user, { reason: repair.status });
     });
@@ -280,4 +319,45 @@ async function changeRepairStatus(req, res, next) {
   } catch (error) { return next(error); }
 }
 
-module.exports = { createRepair, listRepairs, getRepair, recordDiagnosis, createQuote, listQuotes, decideQuote, changeRepairStatus };
+async function updateQualityChecks(req, res, next) {
+  if (!validRepairId(req.params.id)) return res.status(400).json({ error: 'Repair ID must be valid.' });
+  const { errors, value } = validateQualityChecks(req.body);
+  if (Object.keys(errors).length) return res.status(400).json({ error: 'Validation failed.', details: errors });
+  try {
+    const result = await saveWithRetry(req.params.id, (repair) => {
+      const attempt = activeQualityAttempt(repair);
+      if (repair.status !== 'quality_check' || !attempt || attempt.status !== 'active') return { error: 'Quality checks can only be updated during the active quality-check attempt.', status: 409 };
+      const unknown = value.checks.find((update) => !attempt.checks.some((check) => check.id === update.id));
+      if (unknown) return { error: 'Unknown quality-check identifier.', status: 400 };
+      const completed = value.checks.find((update) => attempt.checks.find((check) => check.id === update.id).result !== 'pending');
+      if (completed) return { error: 'Completed quality checks cannot be changed.', status: 409 };
+      value.checks.forEach((update) => {
+        const check = attempt.checks.find((entry) => entry.id === update.id);
+        check.result = update.result; check.notes = update.notes; check.checkedBy = req.user._id; check.checkedAt = new Date();
+        addHistory(repair, 'quality_check_result_recorded', req.user, { reason: `${update.id}: ${update.result}` });
+      });
+    });
+    if (result.missing) return res.status(404).json({ error: 'Repair order not found.' });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    return res.status(200).json({ repair: serializeRepair(result.repair) });
+  } catch (error) { return next(error); }
+}
+
+async function recordHandover(req, res, next) {
+  if (!validRepairId(req.params.id)) return res.status(400).json({ error: 'Repair ID must be valid.' });
+  const { errors, value } = validateHandover(req.body);
+  if (Object.keys(errors).length) return res.status(400).json({ error: 'Validation failed.', details: errors });
+  try {
+    const result = await saveWithRetry(req.params.id, (repair) => {
+      const attempt = activeQualityAttempt(repair);
+      if (repair.status !== 'ready_for_collection' || (repair.handover && repair.handover.handedOverAt) || !latestQuoteIsApproved(repair) || !qualityAttemptPassed(attempt)) return { error: 'Repair is not eligible for handover.', status: 409 };
+      repair.handover = { recipientName: value.recipientName, notes: value.notes, handedOverBy: req.user._id, handedOverAt: new Date() };
+      repair.status = 'returned'; addHistory(repair, 'handover_recorded', req.user, { reason: value.recipientName }); addHistory(repair, 'status_changed', req.user, { reason: 'returned' });
+    });
+    if (result.missing) return res.status(404).json({ error: 'Repair order not found.' });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    return res.status(200).json({ repair: serializeRepair(result.repair) });
+  } catch (error) { return next(error); }
+}
+
+module.exports = { createRepair, listRepairs, getRepair, recordDiagnosis, createQuote, listQuotes, decideQuote, changeRepairStatus, updateQualityChecks, recordHandover };

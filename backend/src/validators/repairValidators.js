@@ -136,10 +136,48 @@ function validateStatusChange(body) {
   const status = typeof source.status === 'string' ? source.status.trim() : '';
   const reason = typeof source.reason === 'string' ? source.reason.trim() : '';
   const resolutionNote = typeof source.resolutionNote === 'string' ? source.resolutionNote.trim() : '';
-  if (!['awaiting_parts', 'in_progress'].includes(status)) errors.status = 'Status must be awaiting_parts or in_progress.';
+  if (!['awaiting_parts', 'in_progress', 'quality_check', 'ready_for_collection'].includes(status)) errors.status = 'Status must be awaiting_parts, in_progress, quality_check, or ready_for_collection.';
   if (status === 'awaiting_parts' && (!reason || reason.length > 500)) errors.reason = 'A non-empty blocker reason of at most 500 characters is required.';
   if (status === 'in_progress' && (!resolutionNote || resolutionNote.length > 500)) errors.resolutionNote = 'A non-empty resolution note of at most 500 characters is required.';
   return { errors, value: { status, reason, resolutionNote } };
 }
 
-module.exports = { validateCreateRepair, validateDiagnosis, validateQuote, validateDecision, validateStatusChange };
+function validateQualityChecks(body) {
+  const source = isPlainObject(body) ? body : {};
+  const errors = {};
+  Object.keys(source).forEach((field) => { if (field !== 'checks') errors[field] = 'This field is not allowed.'; });
+  if (!Array.isArray(source.checks) || source.checks.length < 1 || source.checks.length > 3) {
+    errors.checks = 'Checks must contain between 1 and 3 entries.';
+    return { errors, value: { checks: [] } };
+  }
+  const seen = new Set();
+  const checks = source.checks.map((check, index) => {
+    if (!isPlainObject(check) || Object.keys(check).some((field) => !['id', 'result', 'notes'].includes(field))) {
+      errors[`checks.${index}`] = 'Each check may contain only id, result, and notes.'; return null;
+    }
+    const id = typeof check.id === 'string' ? check.id.trim() : '';
+    const result = typeof check.result === 'string' ? check.result.trim().toLowerCase() : '';
+    const notes = typeof check.notes === 'string' ? check.notes.trim() : '';
+    if (!id) errors[`checks.${index}.id`] = 'Check ID is required.';
+    if (seen.has(id)) errors[`checks.${index}.id`] = 'Duplicate check ID.';
+    seen.add(id);
+    if (!['pass', 'fail'].includes(result)) errors[`checks.${index}.result`] = 'Result must be pass or fail.';
+    if (check.notes !== undefined && (typeof check.notes !== 'string' || notes.length > 500)) errors[`checks.${index}.notes`] = 'Notes must be text of at most 500 characters.';
+    if (result === 'fail' && !notes) errors[`checks.${index}.notes`] = 'A non-empty note is required for a failed check.';
+    return { id, result, notes };
+  });
+  return { errors, value: { checks: checks.filter(Boolean) } };
+}
+
+function validateHandover(body) {
+  const source = isPlainObject(body) ? body : {};
+  const errors = {};
+  Object.keys(source).forEach((field) => { if (!['recipientName', 'notes'].includes(field)) errors[field] = 'This field is not allowed.'; });
+  const recipientName = typeof source.recipientName === 'string' ? source.recipientName.trim() : '';
+  const notes = typeof source.notes === 'string' ? source.notes.trim() : '';
+  if (!recipientName || recipientName.length > 200) errors.recipientName = 'Recipient name is required and must be at most 200 characters.';
+  if (source.notes !== undefined && (typeof source.notes !== 'string' || notes.length > 1000)) errors.notes = 'Notes must be text of at most 1000 characters.';
+  return { errors, value: { recipientName, notes } };
+}
+
+module.exports = { validateCreateRepair, validateDiagnosis, validateQuote, validateDecision, validateStatusChange, validateQualityChecks, validateHandover };

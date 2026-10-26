@@ -63,6 +63,10 @@ All routes below require the `auth_token` cookie. Staff-only routes reject custo
 - `GET /api/repairs/:id/quotes` returns quote history to staff or the repair's owning customer.
 - `POST /api/repairs/:id/quotes/:version/decision` (owning customer) accepts `{ "decision": "approved" }` or `{ "decision": "declined" }` only for the latest pending version. Approval starts work unless a parts blocker exists; decline returns the repair to `diagnosing`.
 - `PATCH /api/repairs/:id/status` (staff) supports only `{ "status": "awaiting_parts", "reason": "..." }` from approved `in_progress`, and `{ "status": "in_progress", "resolutionNote": "..." }` from `awaiting_parts`.
+- Staff can start verification with `PATCH /api/repairs/:id/status` and `{ "status": "quality_check" }` only from approved `in_progress`. This creates a fresh attempt containing the server-defined checks `reported_issue_resolved`, `basic_functionality_tested`, and `device_condition_verified`.
+- `PATCH /api/repairs/:id/quality-checks` (staff) records one or more pending check results. Each entry is `{ "id": "reported_issue_resolved", "result": "pass" }`; a `fail` result requires a non-empty `notes` field. Completed checks and old attempts cannot be altered.
+- `PATCH /api/repairs/:id/status` with `{ "status": "ready_for_collection" }` succeeds only after every current check passes. A failed attempt returns to work through `{ "status": "in_progress", "resolutionNote": "..." }`, preserving that attempt and requiring a fresh checklist later.
+- `POST /api/repairs/:id/handover` (staff) accepts `{ "recipientName": "...", "notes": "optional" }` only from `ready_for_collection`. It atomically records the server timestamp and staff actor and changes the repair to `returned`.
 
 Repair details include quotation and audit history. Customers receive only their own repair and customer-safe history; internal diagnosis notes remain staff-only.
 

@@ -104,3 +104,44 @@ test('concurrent staff quote requests allocate distinct versions without losing 
   const stored = await RepairOrder.findById(id);
   expect(stored.quotes.map((entry) => entry.version).sort((a, b) => a - b)).toEqual([1, 2, 3]);
 });
+
+async function approvedInProgressRepair() {
+  const staff = await user('staff', 'staff@example.com');
+  const customer = await user('customer', 'customer@example.com');
+  const repair = await createRepair(staff, customer);
+  const id = repair.body.repair.id;
+  await request(app).patch(`/api/repairs/${id}/diagnosis`).set('Cookie', cookie(staff)).send({ diagnosis: 'Display failure.' }).expect(200);
+  await request(app).post(`/api/repairs/${id}/quotes`).set('Cookie', cookie(staff)).send(quote).expect(201);
+  await request(app).post(`/api/repairs/${id}/quotes/1/decision`).set('Cookie', cookie(customer)).send({ decision: 'approved' }).expect(200);
+  return { staff, customer, id };
+}
+
+test('staff completes a fresh quality attempt and atomically records handover', async () => {
+  const { staff, customer, id } = await approvedInProgressRepair();
+  const start = await request(app).patch(`/api/repairs/${id}/status`).set('Cookie', cookie(staff)).send({ status: 'quality_check' }).expect(200);
+  expect(start.body.repair.qualityAttempts[0].checks.map((check) => check.result)).toEqual(['pending', 'pending', 'pending']);
+  await request(app).patch(`/api/repairs/${id}/status`).set('Cookie', cookie(staff)).send({ status: 'ready_for_collection' }).expect(409);
+  await request(app).patch(`/api/repairs/${id}/quality-checks`).set('Cookie', cookie(customer)).send({ checks: [] }).expect(403);
+  await request(app).patch(`/api/repairs/${id}/quality-checks`).set('Cookie', cookie(staff)).send({ checks: [
+    { id: 'reported_issue_resolved', result: 'pass' }, { id: 'basic_functionality_tested', result: 'pass' }, { id: 'device_condition_verified', result: 'pass' }
+  ] }).expect(200);
+  await request(app).patch(`/api/repairs/${id}/status`).set('Cookie', cookie(staff)).send({ status: 'ready_for_collection' }).expect(200);
+  await request(app).post(`/api/repairs/${id}/handover`).set('Cookie', cookie(staff)).send({ recipientName: 'Customer Member', notes: 'Collected in person.' }).expect(200);
+  const returned = await RepairOrder.findById(id);
+  expect(returned.status).toBe('returned');
+  expect(returned.handover.recipientName).toBe('Customer Member');
+  expect(returned.history.map((event) => event.type)).toEqual(expect.arrayContaining(['quality_check_started', 'quality_check_passed', 'handover_recorded']));
+  await request(app).post(`/api/repairs/${id}/handover`).set('Cookie', cookie(staff)).send({ recipientName: 'Again' }).expect(409);
+});
+
+test('failed checks require a note and a new quality attempt after rework', async () => {
+  const { staff, id } = await approvedInProgressRepair();
+  await request(app).patch(`/api/repairs/${id}/status`).set('Cookie', cookie(staff)).send({ status: 'quality_check' }).expect(200);
+  await request(app).patch(`/api/repairs/${id}/quality-checks`).set('Cookie', cookie(staff)).send({ checks: [{ id: 'reported_issue_resolved', result: 'fail' }] }).expect(400);
+  await request(app).patch(`/api/repairs/${id}/quality-checks`).set('Cookie', cookie(staff)).send({ checks: [{ id: 'reported_issue_resolved', result: 'fail', notes: 'Display flickers.' }] }).expect(200);
+  await request(app).patch(`/api/repairs/${id}/status`).set('Cookie', cookie(staff)).send({ status: 'in_progress' }).expect(400);
+  await request(app).patch(`/api/repairs/${id}/status`).set('Cookie', cookie(staff)).send({ status: 'in_progress', resolutionNote: 'Re-seat display connector.' }).expect(200);
+  const restarted = await request(app).patch(`/api/repairs/${id}/status`).set('Cookie', cookie(staff)).send({ status: 'quality_check' }).expect(200);
+  expect(restarted.body.repair.qualityAttempts).toHaveLength(2);
+  expect(restarted.body.repair.qualityAttempts[1].checks.every((check) => check.result === 'pending')).toBe(true);
+});
