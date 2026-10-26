@@ -1,6 +1,6 @@
 # RepairTrace
 
-The current milestone provides only a customer-registration API; no frontend, login, repair, quotation, or status features are included yet.
+The current milestone provides customer registration and login APIs only; no frontend, logout, profile, repair, quotation, or status features are included yet.
 
 ## Prerequisites
 
@@ -16,13 +16,14 @@ npm install
 npm run dev
 ```
 
-Set `MONGODB_URI` in `backend/.env` before starting the server. `PORT` defaults to `5000` when omitted. Do not commit `.env`.
+Set `MONGODB_URI` and a long, random `JWT_SECRET` in `backend/.env` before starting the server. `PORT` defaults to `5000` when omitted. Do not commit `.env`.
 
 ## Environment variables
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `MONGODB_URI` | Yes | MongoDB connection string for the application database. |
+| `JWT_SECRET` | Yes | Long random secret used to sign authentication tokens. |
 | `PORT` | No | API listener port; defaults to `5000`. |
 
 ## API
@@ -41,6 +42,8 @@ Set `MONGODB_URI` in `backend/.env` before starting the server. `PORT` defaults 
 ```
 
 Names are trimmed, emails are lowercased, and phone numbers must be valid E.164 international numbers. The server hashes passwords with bcryptjs, rejects role input, and always assigns `customer`. Successful responses contain only safe user fields. A normalized duplicate email returns `409`.
+
+`POST /api/auth/login` accepts `email` and `password`. Email is trimmed and lowercased before lookup. Valid credentials set a seven-day `auth_token` HttpOnly cookie (`SameSite=Lax`; `Secure` in production) and return only safe user fields. Incorrect credentials always return the same `401` response. The JWT is not returned in the response body.
 
 ## Tests
 

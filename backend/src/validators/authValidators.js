@@ -30,4 +30,18 @@ function validateRegistration(body) {
   return { errors, value: { name, email, phone, password } };
 }
 
-module.exports = { validateRegistration };
+function validateLogin(body) {
+  const errors = {};
+  const source = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+
+  const email = typeof source.email === 'string' ? source.email.trim().toLowerCase() : '';
+  if (!validator.isEmail(email)) errors.email = 'Enter a valid email address.';
+
+  const password = typeof source.password === 'string' ? source.password : '';
+  if (!password) errors.password = 'Password is required.';
+  else if (Buffer.byteLength(password, 'utf8') > MAX_BCRYPT_PASSWORD_BYTES) errors.password = 'Password is too long.';
+
+  return { errors, value: { email, password } };
+}
+
+module.exports = { validateRegistration, validateLogin };

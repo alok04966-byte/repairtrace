@@ -1,9 +1,13 @@
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const User = require('../models/User');
-const { validateRegistration } = require('../validators/authValidators');
+const { validateRegistration, validateLogin } = require('../validators/authValidators');
 
 const BCRYPT_ROUNDS = 12;
+const AUTH_COOKIE_NAME = 'auth_token';
+const AUTH_TOKEN_LIFETIME = '7d';
+const AUTH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 function serializeUser(user) {
   return {
@@ -41,4 +45,45 @@ async function register(req, res, next) {
   }
 }
 
-module.exports = { register };
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  return typeof secret === 'string' && secret.trim() ? secret : null;
+}
+
+async function login(req, res, next) {
+  const { errors, value } = validateLogin(req.body);
+  if (Object.keys(errors).length > 0) {
+    return res.status(400).json({ error: 'Validation failed.', details: errors });
+  }
+
+  const jwtSecret = getJwtSecret();
+  if (!jwtSecret) {
+    return res.status(500).json({ error: 'Authentication is unavailable.' });
+  }
+
+  try {
+    const user = await User.findOne({ email: value.email }).select('+passwordHash');
+    const passwordMatches = user ? await bcrypt.compare(value.password, user.passwordHash) : false;
+
+    if (!passwordMatches) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const token = jwt.sign({ sub: user._id.toString(), role: user.role }, jwtSecret, {
+      expiresIn: AUTH_TOKEN_LIFETIME
+    });
+
+    res.cookie(AUTH_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: AUTH_COOKIE_MAX_AGE
+    });
+
+    return res.status(200).json({ user: serializeUser(user) });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+module.exports = { register, login };
