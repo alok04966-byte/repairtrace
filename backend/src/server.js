@@ -15,9 +15,10 @@ async function startServer() {
   }
 
   await connectDatabase(process.env.MONGODB_URI);
+  console.log("DB Connected")
 
   app.listen(port, () => {
-    console.log(`RepairTrace API listening on port ${port}.`);
+    console.log(`Server is running on ${`http://localhost:${port}`}`);
   });
 }
 
