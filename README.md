@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-The Vite development server proxies `/api` to `http://localhost:5000`. Start the backend separately with `cd backend; npm run dev`. For a deployed API, set `VITE_API_BASE_URL` to its origin (for example `https://api.example.com`), and configure that API's credentialed CORS policy for the frontend origin. The portal uses the backend's HttpOnly cookie and never stores tokens in browser storage.
+The Vite development server proxies `/api` to `http://localhost:5000`. Start the backend separately with `cd backend; npm run dev`. Production API requests also use same-origin `/api` paths; `frontend/vercel.json` forwards them to `https://repairtrace.onrender.com` before the React Router SPA fallback. The portal uses the backend's HttpOnly cookie and never stores tokens in browser storage. Update the Vercel rewrite destination if the Render backend hostname changes; do not set a browser API base URL.
 
 Customers can register, view only their own repairs, and decide current quotations. Staff accounts are provisioned through the existing CLI; staff can create repairs and run diagnosis, quotations, parts, quality checks, and handover workflows.
 
