@@ -7,7 +7,7 @@ RepairTrace manages laptop and phone repairs from intake through customer approv
 | **Live application** | [repairtrace.vercel.app](https://repairtrace.vercel.app) |
 | **Backend health check** | [repairtrace.onrender.com/api/health](https://repairtrace.onrender.com/api/health) |
 | **GitHub repository** | [alok04966-byte/repairtrace](https://github.com/alok04966-byte/repairtrace) |
-| **Demo video** | [Add 3–5 minute demo video URL here] |
+| **Demo video** | [drive.google.com/demo/video](https://drive.google.com/file/d/1pCspCBgLIJj3Ujdz1Tdef6l3QLuU93ie/view?usp=sharing) |
 
 The Render health endpoint reports backend and database availability. It is for checking service health; it is not the RepairTrace user interface.
 
