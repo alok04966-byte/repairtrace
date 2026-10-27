@@ -14,3 +14,9 @@ export function safeDestination(destination, user) {
   const permitted = path === home || /^\/repairs\/[a-f\d]{24}$/i.test(path);
   return permitted ? destination : home;
 }
+
+export function hasSafeRepairOrigin(origin, user) {
+  const home = dashboardForRole(user);
+  if (!home || typeof origin !== 'string') return false;
+  return origin.split(/[?#]/, 1)[0] === home;
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dashboardForRole, safeDestination } from '../src/routing.js';
+import { dashboardForRole, hasSafeRepairOrigin, safeDestination } from '../src/routing.js';
 
 test('dashboard destination follows the backend role and rejects unsupported roles', () => {
   assert.equal(dashboardForRole({ role: 'customer' }), '/customer');
@@ -21,4 +21,13 @@ test('return destination rejects external, unsupported, and other-role routes', 
   assert.equal(safeDestination('/not-a-route', { role: 'staff' }), '/staff');
   assert.equal(safeDestination('/repairs/not-an-id', { role: 'staff' }), '/staff');
   assert.equal(safeDestination('/staff', { role: 'superuser' }), null);
+});
+
+test('repair back navigation trusts only the current role dashboard as its in-app origin', () => {
+  assert.equal(hasSafeRepairOrigin('/customer', { role: 'customer' }), true);
+  assert.equal(hasSafeRepairOrigin('/customer?filter=open', { role: 'customer' }), true);
+  assert.equal(hasSafeRepairOrigin('/staff', { role: 'staff' }), true);
+  assert.equal(hasSafeRepairOrigin('/staff', { role: 'customer' }), false);
+  assert.equal(hasSafeRepairOrigin('https://example.com', { role: 'customer' }), false);
+  assert.equal(hasSafeRepairOrigin(undefined, { role: 'customer' }), false);
 });
