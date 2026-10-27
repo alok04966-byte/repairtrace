@@ -1,0 +1,1 @@
+export default function Badge({value}){return <span className={`badge ${value}`}>{value.replaceAll('_',' ')}</span>}
