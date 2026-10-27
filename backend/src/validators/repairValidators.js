@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
+const validator = require('validator');
 
 const DEVICE_TYPES = ['laptop', 'phone'];
-const ALLOWED_FIELDS = ['customerId', 'device', 'reportedIssue', 'intakeCondition', 'intakeNotes', 'accessories'];
+const ALLOWED_FIELDS = ['customerId', 'customerEmail', 'device', 'reportedIssue', 'intakeCondition', 'intakeNotes', 'accessories'];
 const ALLOWED_DEVICE_FIELDS = ['type', 'brand', 'model', 'manufacturerSerialNumber'];
 
 function isPlainObject(value) {
@@ -17,7 +18,10 @@ function validateCreateRepair(body) {
   });
 
   const customerId = typeof source.customerId === 'string' ? source.customerId.trim() : '';
-  if (!mongoose.isObjectIdOrHexString(customerId)) errors.customerId = 'Customer ID must be valid.';
+  const customerEmail = typeof source.customerEmail === 'string' ? source.customerEmail.trim().toLowerCase() : '';
+  if (source.customerId !== undefined && !mongoose.isObjectIdOrHexString(customerId)) errors.customerId = 'Customer ID must be valid.';
+  if (source.customerEmail !== undefined && !validator.isEmail(customerEmail)) errors.customerEmail = 'Enter a valid customer email address.';
+  if (!customerEmail && !customerId) errors.customerEmail = 'Enter the email address of an existing customer.';
 
   const deviceSource = isPlainObject(source.device) ? source.device : null;
   if (!deviceSource) {
@@ -65,7 +69,8 @@ function validateCreateRepair(body) {
   return {
     errors,
     value: {
-      customerId,
+      customerId: customerId || undefined,
+      customerEmail: customerEmail || undefined,
       device: { type, brand, model, manufacturerSerialNumber: manufacturerSerialNumber || undefined },
       reportedIssue,
       intakeCondition,

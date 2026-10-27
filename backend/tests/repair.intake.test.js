@@ -69,6 +69,38 @@ test('staff creates a received repair with a server-generated number', async () 
   expect(storedRepair.createdBy.toString()).toBe(staff._id.toString());
 });
 
+test('staff creates repair by normalized customer email and stores internal ObjectId relationships', async () => {
+  const staff = await createUser('staff', 'staff@example.com');
+  const customer = await createUser('customer', 'registered@example.com');
+  const response = await request(app).post('/api/repairs').set('Cookie', authCookie(staff)).send({
+    ...repairPayload(customer._id), customerEmail: '  REGISTERED@EXAMPLE.COM  ', customerId: undefined
+  }).expect(201);
+  const order = await RepairOrder.findById(response.body.repair.id);
+  const device = await Device.findById(order.device);
+  expect(order.customer.toString()).toBe(customer._id.toString());
+  expect(device.customer.toString()).toBe(customer._id.toString());
+  expect(order.createdBy.toString()).toBe(staff._id.toString());
+});
+
+test('rejects unknown email, staff email, and a conflicting customer ID', async () => {
+  const staff = await createUser('staff', 'staff@example.com');
+  const customer = await createUser('customer', 'customer@example.com');
+  const other = await createUser('customer', 'other@example.com');
+  const base = repairPayload(customer._id);
+  const unknown = await request(app).post('/api/repairs').set('Cookie', authCookie(staff)).send({ ...base, customerId: undefined, customerEmail: 'missing@example.com' });
+  const staffEmail = await request(app).post('/api/repairs').set('Cookie', authCookie(staff)).send({ ...base, customerId: undefined, customerEmail: 'staff@example.com' });
+  const conflict = await request(app).post('/api/repairs').set('Cookie', authCookie(staff)).send({ ...base, customerEmail: 'other@example.com' });
+  const malformed = await request(app).post('/api/repairs').set('Cookie', authCookie(staff)).send({ ...base, customerId: undefined, customerEmail: 'not-an-email' });
+  expect(unknown.status).toBe(404);
+  expect(unknown.body.error).toMatch(/No customer account/);
+  expect(staffEmail.status).toBe(400);
+  expect(staffEmail.body.error).toMatch(/staff account/);
+  expect(conflict.status).toBe(400);
+  expect(conflict.body.error).toMatch(/does not match/);
+  expect(malformed.status).toBe(400);
+  expect(malformed.body.details.customerEmail).toMatch(/valid/);
+});
+
 test('repair numbers are sequential and unique during concurrent creation', async () => {
   const staff = await createUser('staff', 'staff@example.com');
   const customer = await createUser('customer', 'customer@example.com');

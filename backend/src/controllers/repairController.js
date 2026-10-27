@@ -101,9 +101,17 @@ async function createRepair(req, res, next) {
 
   let device;
   try {
-    const customer = await User.findById(value.customerId);
-    if (!customer || customer.role !== 'customer') {
-      return res.status(404).json({ error: 'Customer not found.' });
+    const customer = value.customerEmail
+      ? await User.findOne({ email: value.customerEmail })
+      : await User.findById(value.customerId);
+    if (!customer) {
+      return res.status(404).json({ error: value.customerEmail ? 'No customer account exists for that email address.' : 'Customer not found.' });
+    }
+    if (customer.role !== 'customer') {
+      return res.status(400).json({ error: 'The selected email belongs to a staff account, not a customer.' });
+    }
+    if (value.customerId && customer._id.toString() !== value.customerId) {
+      return res.status(400).json({ error: 'Customer ID does not match the supplied customer email.' });
     }
 
     const repairNumber = await nextRepairNumber();
