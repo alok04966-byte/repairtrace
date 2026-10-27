@@ -220,7 +220,9 @@ async function recordDiagnosis(req, res, next) {
       repair.diagnosis = value.diagnosis;
       repair.diagnosisNotes = value.diagnosisNotes;
       const previousStatus = repair.status;
-      repair.status = 'diagnosing';
+      // Re-saving an unchanged diagnosis must not invalidate an outstanding
+      // customer decision by moving its pending quotation out of approval.
+      if (changing || previousStatus !== 'awaiting_approval') repair.status = 'diagnosing';
       addHistory(repair, changing ? 'diagnosis_updated' : 'diagnosis_created', req.user, { customerSafe: true });
       if (previousStatus !== repair.status) addHistory(repair, 'status_changed', req.user, { reason: repair.status });
     });

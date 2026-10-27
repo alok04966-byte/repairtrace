@@ -75,6 +75,19 @@ test('owner can list, view, read quotes, and decide their repair while another c
   await request(app).post(`/api/repairs/${id}/quotes/1/decision`).set('Cookie', cookie(owner)).send({ decision: 'approved' }).expect(200);
 });
 
+test('re-saving an unchanged diagnosis preserves the current quotation approval state', async () => {
+  const staff = await user('staff', 'staff@example.com');
+  const owner = await user('customer', 'owner@example.com');
+  const repair = await createRepair(staff, owner);
+  const id = repair.body.repair.id;
+  await request(app).patch(`/api/repairs/${id}/diagnosis`).set('Cookie', cookie(staff)).send({ diagnosis: 'Charging circuit fault.' }).expect(200);
+  await request(app).post(`/api/repairs/${id}/quotes`).set('Cookie', cookie(staff)).send(quote).expect(201);
+
+  const saved = await request(app).patch(`/api/repairs/${id}/diagnosis`).set('Cookie', cookie(staff)).send({ diagnosis: 'Charging circuit fault.' }).expect(200);
+  expect(saved.body.repair.status).toBe('awaiting_approval');
+  await request(app).post(`/api/repairs/${id}/quotes/1/decision`).set('Cookie', cookie(owner)).send({ decision: 'approved' }).expect(200);
+});
+
 test('validates quote items and enforces parts blocker lifecycle with audit history', async () => {
   const staff = await user('staff', 'staff@example.com');
   const customer = await user('customer', 'customer@example.com');
